@@ -1,5 +1,411 @@
-<html>
-<body>
- <h1>Your-name</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Number Code Video Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #050505;
+            color: #00ff41; /* Matrix green */
+            font-family: 'Courier New', Courier, monospace;
+        }
+        
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #00ff41;
+            cursor: pointer;
+            margin-top: -6px;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #1a4d2e;
+            border-radius: 2px;
+        }
+        
+        .matrix-border {
+            border: 1px solid #00ff41;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+        }
+
+        /* Hide scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #000;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #00ff41;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col md:flex-row">
+
+    <!-- Hidden Video Element for Processing -->
+    <video id="sourceVideo" class="hidden" autoplay muted playsinline loop></video>
+
+    <!-- Sidebar Controls -->
+    <aside class="w-full md:w-80 h-auto md:h-full flex-shrink-0 matrix-border bg-black p-6 flex flex-col gap-6 overflow-y-auto z-10">
+        <div>
+            <h1 class="text-2xl font-bold mb-2 tracking-widest uppercase">NumCode<br>Visualizer</h1>
+            <p class="text-xs text-green-700">Digital footprint renderer v1.0</p>
+        </div>
+
+        <div class="space-y-4 flex-grow">
+            <!-- Input Sources -->
+            <div class="p-4 matrix-border bg-gray-900 bg-opacity-50">
+                <h2 class="text-sm font-bold uppercase mb-3 text-green-400">Input Source</h2>
+                <div class="space-y-3">
+                    <button id="webcamBtn" class="w-full py-2 px-4 matrix-border hover:bg-green-900 hover:text-green-100 transition-colors uppercase text-sm">
+                        Initialize Webcam
+                    </button>
+                    <div class="relative w-full">
+                        <input type="file" id="videoUpload" accept="video/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                        <button class="w-full py-2 px-4 matrix-border hover:bg-green-900 hover:text-green-100 transition-colors uppercase text-sm">
+                            Upload Video File
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parameters -->
+            <div class="p-4 matrix-border bg-gray-900 bg-opacity-50 space-y-5">
+                <h2 class="text-sm font-bold uppercase mb-2 text-green-400">Render Parameters</h2>
+                
+                <div>
+                    <label class="flex justify-between text-xs mb-1">
+                        <span>Resolution (Font Size)</span>
+                        <span id="fontSizeVal">12px</span>
+                    </label>
+                    <input type="range" id="fontSize" min="6" max="24" value="12" step="1">
+                </div>
+
+                <div>
+                    <label class="flex justify-between text-xs mb-1">
+                        <span>Contrast</span>
+                        <span id="contrastVal">1.2</span>
+                    </label>
+                    <input type="range" id="contrast" min="0.5" max="3" value="1.2" step="0.1">
+                </div>
+
+                <div>
+                    <label class="flex justify-between text-xs mb-1">
+                        <span>Brightness</span>
+                        <span id="brightnessVal">0</span>
+                    </label>
+                    <input type="range" id="brightness" min="-100" max="100" value="0" step="1">
+                </div>
+                
+                <div>
+                    <label class="flex justify-between text-xs mb-1">
+                        <span>Number Mode</span>
+                    </label>
+                    <select id="charMode" class="w-full bg-black matrix-border text-green-500 p-1 text-sm outline-none">
+                        <option value="density">Density (Shading)</option>
+                        <option value="random">Random Data Stream</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Export -->
+            <div class="p-4 matrix-border bg-gray-900 bg-opacity-50">
+                <h2 class="text-sm font-bold uppercase mb-3 text-green-400">Export</h2>
+                <button id="recordBtn" class="w-full py-2 px-4 matrix-border hover:bg-green-900 hover:text-green-100 transition-colors uppercase text-sm font-bold flex items-center justify-center gap-2">
+                    <span id="recordIcon" class="w-3 h-3 rounded-full bg-red-600 hidden"></span>
+                    <span id="recordText">Start Recording</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="mt-auto pt-4 border-t border-green-900 text-xs text-center text-green-800">
+            Rendered in real-time via Canvas API.
+        </div>
+    </aside>
+
+    <!-- Main Canvas Area -->
+    <main class="flex-grow relative bg-black flex items-center justify-center overflow-hidden">
+        <!-- Placeholder text before video plays -->
+        <div id="placeholder" class="absolute text-center animate-pulse z-0">
+            <p class="text-xl">AWAITING VIDEO SIGNAL...</p>
+        </div>
+        
+        <canvas id="outputCanvas" class="z-10 object-contain w-full h-full"></canvas>
+    </main>
+
+    <script>
+        // DOM Elements
+        const video = document.getElementById('sourceVideo');
+        const canvas = document.getElementById('outputCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false }); // Optimize for no transparency
+        
+        // Controls
+        const webcamBtn = document.getElementById('webcamBtn');
+        const videoUpload = document.getElementById('videoUpload');
+        const fontSizeSlider = document.getElementById('fontSize');
+        const contrastSlider = document.getElementById('contrast');
+        const brightnessSlider = document.getElementById('brightness');
+        const charModeSelect = document.getElementById('charMode');
+        const placeholder = document.getElementById('placeholder');
+        
+        // Export Controls
+        const recordBtn = document.getElementById('recordBtn');
+        const recordText = document.getElementById('recordText');
+        const recordIcon = document.getElementById('recordIcon');
+
+        // Value Displays
+        const fontSizeVal = document.getElementById('fontSizeVal');
+        const contrastVal = document.getElementById('contrastVal');
+        const brightnessVal = document.getElementById('brightnessVal');
+
+        // State
+        let animationFrameId;
+        let isPlaying = false;
+        
+        // Recording State
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isRecording = false;
+
+        // Hidden canvas for extracting pixel data
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+
+        // Characters mapped by visual density (lightest to darkest)
+        // We use numbers. Space is for completely dark areas.
+        const densityChars = "  1723546980"; 
+        const randomChars = "0123456789";
+
+        // Update UI Values
+        fontSizeSlider.addEventListener('input', (e) => fontSizeVal.textContent = `${e.target.value}px`);
+        contrastSlider.addEventListener('input', (e) => contrastVal.textContent = e.target.value);
+        brightnessSlider.addEventListener('input', (e) => brightnessVal.textContent = e.target.value);
+
+        // Webcam Setup
+        webcamBtn.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
+                video.srcObject = stream;
+                video.play();
+                startRendering();
+            } catch (err) {
+                console.error("Error accessing webcam:", err);
+                alert("Could not access webcam. Please check permissions.");
+            }
+        });
+
+        // Recording Logic
+        recordBtn.addEventListener('click', () => {
+            if (!isPlaying) {
+                // Flash a warning if no video is playing
+                const originalText = recordText.textContent;
+                recordText.textContent = "NO SIGNAL!";
+                recordText.classList.add("text-red-500");
+                setTimeout(() => {
+                    recordText.textContent = originalText;
+                    recordText.classList.remove("text-red-500");
+                }, 2000);
+                return;
+            }
+
+            if (!isRecording) {
+                // Start Recording
+                recordedChunks = [];
+                const stream = canvas.captureStream(30); // Capture at 30 FPS
+                
+                try {
+                    // Try to record in WebM format
+                    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                } catch (e) {
+                    console.warn('WebM MediaRecorder creation failed, falling back to defaults:', e);
+                    // Fallback for browsers that don't support specific mimeType constraints well
+                    mediaRecorder = new MediaRecorder(stream);
+                }
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    // Create temporary link to trigger download
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `numcode-render-${Date.now()}.webm`;
+                    document.body.appendChild(a);
+                    a.click();
+                    
+                    // Cleanup
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                    }, 100);
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                
+                // Update UI to reflect recording state
+                recordText.textContent = "Stop Recording";
+                recordIcon.classList.remove('hidden');
+                recordIcon.classList.add('animate-pulse');
+                recordBtn.classList.add('border-red-600', 'text-red-400');
+                recordBtn.classList.remove('hover:bg-green-900', 'hover:text-green-100');
+            } else {
+                // Stop Recording
+                mediaRecorder.stop();
+                isRecording = false;
+                
+                // Update UI back to default
+                recordText.textContent = "Start Recording";
+                recordIcon.classList.add('hidden');
+                recordIcon.classList.remove('animate-pulse');
+                recordBtn.classList.remove('border-red-600', 'text-red-400');
+                recordBtn.classList.add('hover:bg-green-900', 'hover:text-green-100');
+            }
+        });
+
+        function resizeCanvas() {
+            if (!video.videoWidth) return;
+            
+            // Match canvas to actual video dimensions for accurate rendering
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        }
+
+        function startRendering() {
+            placeholder.style.display = 'none';
+            if (!isPlaying) {
+                isPlaying = true;
+                
+                // Wait for video metadata to load to get dimensions
+                video.addEventListener('loadedmetadata', () => {
+                    resizeCanvas();
+                    renderLoop();
+                }, { once: true });
+                
+                // Fallback if metadata is already loaded
+                if (video.videoWidth) {
+                     resizeCanvas();
+                     renderLoop();
+                }
+            }
+        }
+
+        function renderLoop() {
+            if (video.paused || video.ended) {
+                animationFrameId = requestAnimationFrame(renderLoop);
+                return;
+            }
+
+            const fontSize = parseInt(fontSizeSlider.value, 10);
+            const contrast = parseFloat(contrastSlider.value);
+            const brightnessOffset = parseInt(brightnessSlider.value, 10);
+            const mode = charModeSelect.value;
+
+            // Define grid based on canvas size and font size
+            const cols = Math.ceil(canvas.width / fontSize);
+            const rows = Math.ceil(canvas.height / fontSize);
+
+            // Resize temp canvas to match grid dimensions
+            if (tempCanvas.width !== cols || tempCanvas.height !== rows) {
+                tempCanvas.width = cols;
+                tempCanvas.height = rows;
+            }
+
+            // Draw current video frame to small temp canvas to average pixels
+            tempCtx.drawImage(video, 0, 0, cols, rows);
+            
+            // Extract pixel data
+            let pixels;
+            try {
+                pixels = tempCtx.getImageData(0, 0, cols, rows).data;
+            } catch(e) {
+                // Handle potential cross-origin issues with external videos
+                cancelAnimationFrame(animationFrameId);
+                return;
+            }
+
+            // Clear main canvas
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Set font styles
+            ctx.fillStyle = '#00ff41';
+            ctx.font = `bold ${fontSize}px monospace`;
+            ctx.textBaseline = 'top';
+
+            // Loop through grid
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    const offset = (y * cols + x) * 4;
+                    const r = pixels[offset];
+                    const g = pixels[offset + 1];
+                    const b = pixels[offset + 2];
+
+                    // Calculate perceived brightness (luminance)
+                    let brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                    // Apply contrast and brightness adjustments
+                    brightness = (brightness - 128) * contrast + 128 + brightnessOffset;
+                    brightness = Math.max(0, Math.min(255, brightness));
+
+                    // Only draw if brightness is above a small threshold
+                    if (brightness > 15) {
+                        let charToDraw = '';
+                        
+                        if (mode === 'density') {
+                            // Map brightness to character density index
+                            const charIndex = Math.floor((brightness / 255) * (densityChars.length - 1));
+                            charToDraw = densityChars[charIndex];
+                        } else {
+                            // Random numbers, but use brightness for opacity/color intensity
+                            charToDraw = randomChars[Math.floor(Math.random() * randomChars.length)];
+                            const alpha = (brightness / 255).toFixed(2);
+                            ctx.fillStyle = `rgba(0, 255, 65, ${alpha})`;
+                        }
+
+                        // Draw the character
+                        if (charToDraw !== ' ') {
+                            ctx.fillText(charToDraw, x * fontSize, y * fontSize);
+                        }
+                    }
+                }
+            }
+
+            // Reset fillStyle if modified by random mode
+            if (mode === 'random') {
+                ctx.fillStyle = '#00ff41';
+            }
+
+            animationFrameId = requestAnimationFrame(renderLoop);
+        }
+
+        // Handle window resizing (purely visual container resize is handled by Tailwind classes, 
+        // but we ensure the internal logic doesn't break)
+        window.addEventListener('resize', () => {
+             if (isPlaying && video.videoWidth) resizeCanvas();
+        });
+
+    </script>
 </body>
 </html>
